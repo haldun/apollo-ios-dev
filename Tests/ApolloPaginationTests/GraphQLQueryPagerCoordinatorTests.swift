@@ -74,22 +74,22 @@ final class GraphQLQueryPagerCoordinatorTests: XCTestCase, CacheDependentTesting
   // MARK: - Reset Tests
 
   @available(iOS 16.0, macOS 13.0, *)
-  func test__reset__calls_callback() async throws {
+  func test__reset__calls_callback() throws {
     server.customDelay = .milliseconds(1)
     let pager = GraphQLQueryPagerCoordinator(pager: createForwardPager())
     let serverExpectation = Mocks.Hero.FriendsQuery.expectationForFirstPage(server: server)
 
     pager.fetch()
-    await fulfillment(of: [serverExpectation], timeout: 1)
+    wait(for: [serverExpectation], timeout: 1)
     server.customDelay = .milliseconds(200)
     let secondPageExpectation = Mocks.Hero.FriendsQuery.expectationForSecondPage(server: server)
     let callbackExpectation = expectation(description: "Callback")
     pager.loadNext(completion: { _ in
       callbackExpectation.fulfill()
     })
-    try await Task.sleep(for: .milliseconds(50))
+    usleep(50_000)
     pager.reset()
-    await fulfillment(of: [callbackExpectation, secondPageExpectation], timeout: 1)
+    wait(for: [callbackExpectation, secondPageExpectation], timeout: 1)
   }
 
   @available(iOS 16.0, macOS 13.0, *)
@@ -124,27 +124,31 @@ final class GraphQLQueryPagerCoordinatorTests: XCTestCase, CacheDependentTesting
   }
 
   @available(iOS 16.0, macOS 13.0, *)
-  func test__reset__calls_callback_deinit() async throws {
+  func test__reset__calls_callback_deinit() throws {
     server.customDelay = .milliseconds(1)
     var pager: GraphQLQueryPagerCoordinator! = GraphQLQueryPagerCoordinator(pager: createForwardPager())
     let serverExpectation = Mocks.Hero.FriendsQuery.expectationForFirstPage(server: server)
     var results: [Result<PaginationOutput<ForwardQuery, ForwardQuery>, any Error>] = []
     var errors: [PaginationError?] = []
 
-    pager.fetch()
-    await fulfillment(of: [serverExpectation], timeout: 1)
-    server.customDelay = .milliseconds(150)
     pager.subscribe { result in
       results.append(result)
     }
+    pager.fetch()
+    wait(for: [serverExpectation], timeout: 1)
+
+    server.customDelay = .milliseconds(150)
     let secondPageExpectation = Mocks.Hero.FriendsQuery.expectationForSecondPage(server: server)
+
     pager.loadNext(completion: { error in
       errors.append(error)
     })
-    try await Task.sleep(for: .milliseconds(50))
+
+    // Sleep for 50ms make sure that `loadNext` kicked in but the server does not return anything yet.
+    usleep(50_000)
     pager = nil
 
-    await fulfillment(of: [secondPageExpectation], timeout: 2)
+    wait(for: [secondPageExpectation], timeout: 2)
     XCTAssertEqual(results.count, 1) // once for original fetch
     XCTAssertEqual(errors.count, 1)
     XCTAssertTrue(errors.contains(where: { PaginationError.isCancellation(error: $0) }))
